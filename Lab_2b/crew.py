@@ -129,26 +129,7 @@ class SimpleManufacturingCrew:
         )
     # ...existing code...
 
-    def _get_machines_from_context(self):
-        """Helper to retrieve machines from runtime context; fallback to reading config input file"""
-        # Best-effort: try to read last-run input file or environment; here we'll fallback to a simple file read
-        try:
-            from tool_selector import ToolSelector
-            sel = ToolSelector("input/allocation_tools.csv")
-            data = sel.select_tools(3, demand=3000)
-            return data['machines']
-        except Exception:
-            return {}
-
-    def _get_demand_from_context(self):
-        try:
-            from tool_selector import ToolSelector
-            sel = ToolSelector("input/allocation_tools.csv")
-            data = sel.select_tools(3, demand=3000)
-            return data['product_demand']
-        except Exception:
-            return 0
-
+    # ...existing code...
     @crew
     def crew(self) -> Crew:
         """Creates the crew"""
