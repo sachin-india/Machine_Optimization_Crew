@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store
+
+# uv lock file
+uv.lock
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Other common ignores
+*.log
+*.sqlite3
+*.db
+
+# Test and coverage reports
+htmlcov/
+.coverage
+.tox/
+.nox/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

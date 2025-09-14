@@ -1,0 +1,13 @@
+optimize_structured:
+  description: >
+    You are given product demand of {product_demand} and machines {machines}.
+    
+    Steps to follow:
+    1. Analyze the machines and find the best allocation strategy
+    2. Decide how many units each machine should produce
+    3. MUST call manufacturing_cost_calculator tool to get the total costs
+    4. Use the tool's cost numbers in your final answer
+    
+    Important: You must use the tool for cost calculations. Do not calculate costs yourself.
+  expected_output: >
+    A structured solution showing your allocation and the costs from the calculator tool.

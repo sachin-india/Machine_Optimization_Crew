@@ -1,0 +1,15 @@
+optimize_structured:
+  description: >
+    STRICT OUTPUT REQUIRED (JSON ONLY).
+
+    You MUST use the manufacturing_cost_calculator tool for ALL cost calculations.
+
+    Given machines {machines} and demand {product_demand}:
+    1. Produce a JSON object with exactly these keys: "strategy_name", "machine_allocations".
+       - "machine_allocations" must be a dict mapping machine keys to integer production units.
+       - The sum of values in "machine_allocations" MUST be >= {product_demand}.
+    2. After producing the allocation JSON, call manufacturing_cost_calculator with that allocation and return its results.
+
+    DO NOT include any explanatory text outside the JSON block. DO NOT calculate costs yourself.
+  expected_output: >
+    JSON object: {"strategy_name": "...", "machine_allocations": {"Tool_X": 1000, ...}}
