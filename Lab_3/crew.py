@@ -9,8 +9,8 @@ from calculator_tool import (
     manufacturing_calculator_tool, 
     manufacturing_cost_calculator,
     was_tool_called,
-    brute_force_optimizer_tool,
-    brute_force_optimizer,
+    strategic_optimizer_tool,
+    strategic_optimizer,
     was_oracle_tool_called,
     evaluator_calculator_tool,
     was_evaluator_calculator_called
@@ -49,8 +49,8 @@ class SimpleManufacturingCrew:
     def evaluator_agent(self) -> Agent:
         """Agent that evaluates allocations using the oracle tool."""
         tools = []
-        if brute_force_optimizer_tool is not None:
-            tools.append(brute_force_optimizer_tool)
+        if strategic_optimizer_tool is not None:
+            tools.append(strategic_optimizer_tool)
         if evaluator_calculator_tool is not None:
             tools.append(evaluator_calculator_tool)
 
@@ -78,17 +78,117 @@ class SimpleManufacturingCrew:
         """Store the allocation result for evaluation"""
         self._last_allocation_result = allocation_result
 
+    def _generate_feedback_based_on_tools(self, optimal_allocation, allocator_allocation, optimal_cost, allocator_cost, machines):
+        """Generate meaningful feedback based on actual tool results"""
+        feedback = {
+            'what_allocator_did_well': [],
+            'recommendations_for_improvement': []
+        }
+        
+        # Analyze what the allocator did well
+        if allocator_cost == optimal_cost:
+            feedback['what_allocator_did_well'].append("Found the mathematically optimal solution")
+            feedback['recommendations_for_improvement'].append("Continue using this excellent allocation strategy")
+        else:
+            # Check if allocator used any of the same machines as optimal
+            optimal_machines = set(k for k, v in optimal_allocation.items() if v > 0)
+            allocator_machines = set(k for k, v in allocator_allocation.items() if v > 0)
+            common_machines = optimal_machines.intersection(allocator_machines)
+            
+            if common_machines:
+                feedback['what_allocator_did_well'].append(f"Correctly identified some key machines: {list(common_machines)}")
+            
+            # Check if allocator met demand
+            total_allocated = sum(allocator_allocation.values())
+            feedback['what_allocator_did_well'].append(f"Successfully met demand with {total_allocated} units allocated")
+            
+            # Analyze cost efficiency
+            if allocator_cost < optimal_cost * 1.1:  # Within 10%
+                feedback['what_allocator_did_well'].append("Achieved near-optimal cost efficiency")
+            
+            # Generate specific recommendations
+            cost_diff = allocator_cost - optimal_cost
+            percentage_more = (cost_diff / optimal_cost) * 100
+            
+            feedback['recommendations_for_improvement'].append(
+                f"Current solution is ${cost_diff:,.2f} ({percentage_more:.1f}%) more expensive than optimal"
+            )
+            
+            # Identify specific machine allocation differences
+            optimal_str = ", ".join([f"{k}: {v}" for k, v in optimal_allocation.items() if v > 0])
+            feedback['recommendations_for_improvement'].append(
+                f"Optimal allocation: {optimal_str} achieves ${optimal_cost:,.2f}"
+            )
+            
+            # Analyze efficiency patterns
+            optimal_efficiency = []
+            for machine, units in optimal_allocation.items():
+                if units > 0:
+                    var_cost = machines[machine]['variable_cost']
+                    fixed_cost = machines[machine]['fixed_cost']
+                    unit_cost = var_cost + (fixed_cost / units) if units > 0 else float('inf')
+                    optimal_efficiency.append((machine, unit_cost))
+            
+            optimal_efficiency.sort(key=lambda x: x[1])
+            if optimal_efficiency:
+                best_machine = optimal_efficiency[0][0]
+                feedback['recommendations_for_improvement'].append(
+                    f"Consider prioritizing {best_machine} which has the best cost efficiency in the optimal solution"
+                )
+        
+        return feedback
+
     @task
     def optimize_structured_with_callback(self) -> Task:
         """Task that enforces tool usage via a post-task callback"""
         def enforce_tool_callback(task_output):
             """Callback inspects agent output and forces tool if needed."""
+            print("\n" + "="*50)
+            print("📊 ALLOCATION AGENT RESULT")
+            print("="*50)
+            
             try:
-                # If tool was already called by the agent, do nothing
-                if was_tool_called():
+                # Check if tool was called AND if the result has valid cost data
+                has_valid_costs = False
+                if hasattr(task_output, 'total_cost') and task_output.total_cost is not None and task_output.total_cost > 0:
+                    has_valid_costs = True
+                elif isinstance(task_output, dict) and task_output.get('total_cost') is not None and task_output.get('total_cost') > 0:
+                    has_valid_costs = True
+                
+                # If tool was called successfully and we have valid costs, get pure tool output
+                if was_tool_called() and has_valid_costs:
+                    print("✅ Agent used manufacturing calculator correctly")
+                    
+                    # Extract allocation from agent's output
+                    allocation = None
+                    if hasattr(task_output, 'machine_allocations'):
+                        allocation = task_output.machine_allocations
+                        self._last_allocator_result = {'machine_allocations': task_output.machine_allocations}
+                    elif isinstance(task_output, dict) and 'machine_allocations' in task_output:
+                        allocation = task_output['machine_allocations']
+                        self._last_allocator_result = {'machine_allocations': task_output['machine_allocations']}
+                    
+                    if allocation:
+                        # Get problem context
+                        machines = getattr(self, '_last_problem_inputs', {}).get('machines')
+                        demand = getattr(self, '_last_problem_inputs', {}).get('product_demand')
+                        
+                        if machines and demand is not None:
+                            # Get pure tool output
+                            tool_result = manufacturing_cost_calculator(machines=machines, demand=demand, allocation=allocation)
+                            print(f"Allocation: {allocation}")
+                            print(f"Total Cost: ${tool_result['total_cost']:,.2f}")
+                            print("="*50)
+                            return tool_result
+                    
+                    # Fallback to original output if we can't extract allocation
+                    print("⚠️ Using agent's original output")
+                    print("="*50)
                     return task_output
 
-                # Try to extract allocation from structured output (pydantic or dict)
+                print("⚠️ Agent didn't use calculator - forcing tool usage...")
+                # Either tool wasn't called properly or costs are invalid - enforce tool usage
+                # Either tool wasn't called properly or costs are invalid - enforce tool usage
                 allocation = None
                 if hasattr(task_output, 'machine_allocations'):
                     allocation = task_output.machine_allocations
@@ -135,7 +235,6 @@ class SimpleManufacturingCrew:
                 for machine_name, units in allocation.items():
                     capacity = float(machines[machine_name]['capacity'])
                     if units > capacity:
-                        print(f"🔧 FIXING: {machine_name} allocated {units} > capacity {capacity}")
                         allocation[machine_name] = int(capacity)
                         allocation_fixed = True
                 
@@ -144,7 +243,6 @@ class SimpleManufacturingCrew:
                 
                 # If total is now less than demand, scale up proportionally
                 if total_alloc < demand:
-                    print(f"🔧 SCALING: Total {total_alloc} < demand {demand}")
                     # Calculate available additional capacity
                     remaining_capacity = {}
                     for machine_name in allocation.keys():
@@ -175,7 +273,6 @@ class SimpleManufacturingCrew:
                 # If total is more than demand, scale down proportionally
                 total_alloc = sum(allocation.values())
                 if total_alloc > demand:
-                    print(f"🔧 SCALING DOWN: Total {total_alloc} > demand {demand}")
                     # Proportional scaling down
                     scaled = {}
                     remaining = demand
@@ -192,20 +289,19 @@ class SimpleManufacturingCrew:
 
                 tool_result = manufacturing_cost_calculator(machines=machines, demand=demand, allocation=allocation)
 
-                # Construct enforced structured result
-                enforced = {
-                    'strategy_name': getattr(task_output, 'strategy_name', 'Enforced_Strategy'),
-                    'machine_allocations': allocation,
-                    'total_variable_cost': tool_result['total_variable_cost'],
-                    'total_fixed_cost': tool_result['total_fixed_cost'],
-                    'total_cost': tool_result['total_cost'],
-                    'reasoning': 'Costs computed via enforced manufacturing_cost_calculator.'
-                }
-
-                return enforced
+                # Store allocation for evaluator
+                self._last_allocator_result = {'machine_allocations': allocation}
+                
+                print(f"Forced allocation: {allocation}")
+                print(f"Verified cost: ${tool_result['total_cost']:,.2f}")
+                print("="*50)
+                
+                return tool_result
 
             except Exception:
                 # On any enforcement failure, return the original task output
+                print("❌ Enforcement failed - using original output")
+                print("="*50)
                 return task_output
         
         # Return the task with pydantic output and enforcement callback
@@ -221,40 +317,67 @@ class SimpleManufacturingCrew:
         """Task that evaluates allocation using oracle tool with enforcement"""
         def enforce_oracle_callback(task_output):
             """Callback to ensure oracle tool is used"""
+            print("\n" + "="*50)
+            print("🔍 EVALUATION RESULT")
+            print("="*50)
+            
             try:
-                # If oracle tool was already called by the agent, return output
-                if was_oracle_tool_called():
-                    return task_output
-                
-                # Force oracle tool usage
+                # Always force oracle tool usage to ensure accurate results
                 machines = getattr(self, '_last_problem_inputs', {}).get('machines')
                 demand = getattr(self, '_last_problem_inputs', {}).get('product_demand')
+                allocator_allocation = getattr(self, '_last_allocator_result', {}).get('machine_allocations', {})
+                
                 if not machines or demand is None:
+                    print("❌ Missing problem context")
+                    print("="*50)
                     return task_output
                 
                 # Call oracle tool to get optimal solution
-                oracle_result = brute_force_optimizer(machines=machines, demand=demand)
+                oracle_result = strategic_optimizer(machines=machines, demand=demand)
                 
-                # Create evaluation report
-                evaluation_text = f"""
-EVALUATION REPORT (Oracle Tool Enforced):
-
-OPTIMAL SOLUTION (via brute force optimizer):
-- Optimal Allocation: {oracle_result['optimal_allocation']}
-- Optimal Cost: ${oracle_result['optimal_cost']}
-- Optimal Variable Cost: ${oracle_result['optimal_variable_cost']}
-- Optimal Fixed Cost: ${oracle_result['optimal_fixed_cost']}
-
-COMPARISON & RECOMMENDATIONS:
-The allocator's solution vs optimal solution analysis is enforced via oracle tool.
-Agent attempted: {str(task_output)[:500]}...
-
-Oracle tool was enforced to ensure mathematically optimal comparison.
-"""
-                return evaluation_text
+                # Get verified cost for allocator's solution
+                allocator_cost_result = manufacturing_cost_calculator(machines=machines, demand=demand, allocation=allocator_allocation)
+                
+                # Create proper evaluation based on ACTUAL tool results
+                feasible_text = "Yes" if oracle_result.get('feasible', True) else f"No - {oracle_result.get('reason', 'Unknown')}"
+                
+                # Compare VERIFIED costs (not agent guesses)
+                allocator_verified_cost = allocator_cost_result['total_cost']
+                optimal_cost = oracle_result['optimal_cost']
+                cost_diff = allocator_verified_cost - optimal_cost
+                efficiency = (optimal_cost / allocator_verified_cost * 100) if allocator_verified_cost > 0 else 100
+                
+                # Display simple evaluation summary
+                print(f"Allocator's solution: {allocator_allocation}")
+                print(f"Allocator's cost: ${allocator_verified_cost:,.2f}")
+                print()
+                print(f"Optimal solution: {oracle_result['optimal_allocation']}")  
+                print(f"Optimal cost: ${optimal_cost:,.2f}")
+                print()
+                if cost_diff == 0:
+                    print("🎯 PERFECT! Allocator found the optimal solution")
+                else:
+                    print(f"💰 Cost difference: ${cost_diff:,.2f} ({cost_diff/optimal_cost*100:.1f}% more expensive)")
+                    print(f"📊 Efficiency: {efficiency:.1f}%")
+                
+                # Create simplified evaluation result
+                evaluation_result = {
+                    'allocator_allocation': allocator_allocation,
+                    'allocator_cost': allocator_verified_cost,
+                    'optimal_allocation': oracle_result['optimal_allocation'],
+                    'optimal_cost': optimal_cost,
+                    'cost_difference': cost_diff,
+                    'efficiency_percentage': efficiency,
+                    'is_optimal': cost_diff == 0
+                }
+                
+                print("="*50)
+                return evaluation_result
                 
             except Exception as e:
-                return f"Evaluation failed: {str(e)}\nOriginal output: {task_output}"
+                print(f"❌ Evaluation failed: {str(e)}")
+                print("="*50)
+                return f"Evaluation failed: {str(e)}"
         
         return Task(
             config=self.tasks_config['evaluate_allocation'],

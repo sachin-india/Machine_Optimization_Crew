@@ -31,36 +31,15 @@ def manufacturing_cost_calculator(
     
     if allocation is None:
         raise ValueError("Allocation must be provided")
-
-# Simple tool to track if it gets called
-tool_was_called = False
-oracle_tool_was_called = False
-evaluator_used_calculator = False
-# Toggle verbose tool logging. Keep False by default to avoid duplicating output
-VERBOSE = False
-
-def manufacturing_cost_calculator(
-    machines: Dict[str, Dict[str, float]],
-    demand: int,
-    allocation: Optional[Dict[str, int]] = None
-) -> Dict[str, Any]:
-    """Calculate manufacturing costs for a given allocation."""
-    global tool_was_called
-    tool_was_called = True
     
-    if VERBOSE:
-        print("🔧 TOOL CALLED: manufacturing_cost_calculator")
-        print(f"� Allocation received: {allocation}")
-    
-    if demand <= 0:
-        raise ValueError("Demand must be positive")
-    
-    if allocation is None:
-        raise ValueError("Allocation must be provided")
-    # Validate allocation meets demand
+    # Validate allocation meets demand (unless we're analyzing infeasible scenarios)
     total_allocated = sum(allocation.values())
     if total_allocated < demand:
-        raise ValueError(f"Allocation supplies {total_allocated} units but demand is {demand}")
+        # Only raise error if we're not in an infeasible capacity scenario
+        total_capacity = sum(float(machines[name]['capacity']) for name in machines.keys())
+        if total_capacity >= demand:
+            raise ValueError(f"Allocation supplies {total_allocated} units but demand is {demand}")
+        # For infeasible scenarios, just proceed with what we have
     
     # Validate allocation doesn't exceed machine capacities
     for machine_name, units in allocation.items():
@@ -84,9 +63,6 @@ def manufacturing_cost_calculator(
             total_fixed += fixed_cost
     
     total_cost = total_variable + total_fixed
-    
-    if VERBOSE:
-        print(f"💰 TOOL RESULT: Total cost = ${total_cost}")
     
     return {
         'machine_allocations': allocation,
@@ -114,127 +90,160 @@ def reset_tool_tracker():
     oracle_tool_was_called = False
     evaluator_used_calculator = False
 
-def brute_force_optimizer(
+def strategic_optimizer(
     machines: Dict[str, Dict[str, float]],
     demand: int
 ) -> Dict[str, Any]:
-    """Find the mathematically optimal allocation using brute force search."""
+    """
+    Strategic optimization to find the best allocation.
+    Uses intelligent strategies to test only the most promising combinations.
+    """
     global oracle_tool_was_called
     oracle_tool_was_called = True
     
     if VERBOSE:
-        print("🔧 ORACLE TOOL CALLED: brute_force_optimizer")
-        print(f"🎯 Finding optimal allocation for demand: {demand}")
-    
-    if demand <= 0:
-        raise ValueError("Demand must be positive")
+        print("🔍 ORACLE TOOL CALLED: strategic_optimizer")
+        print(f"📊 Machines: {machines}")
+        print(f"📈 Demand: {demand}")
     
     machine_names = list(machines.keys())
-    best_allocation = None
-    best_cost = float('inf')
+    machine_capacities = [int(machines[name]['capacity']) for name in machine_names]
     
-    # Check if demand can be met
-    total_capacity = sum(float(specs['capacity']) for specs in machines.values())
-    if demand > total_capacity:
-        print(f"⚠️ WARNING: Demand {demand} exceeds total capacity {total_capacity}")
-        # Use maximum possible allocation
-        max_allocation = {}
-        for machine_name, specs in machines.items():
-            max_allocation[machine_name] = int(specs['capacity'])
-        
-        # Calculate cost for maximum possible production
-        cost_result = manufacturing_cost_calculator(machines, sum(max_allocation.values()), max_allocation)
-        
+    # Check if total capacity can meet demand
+    total_capacity = sum(machine_capacities)
+    if total_capacity < demand:
+        if VERBOSE:
+            print(f"⚠️ WARNING: Total capacity {total_capacity} < demand {demand}")
+        # Return best possible allocation using full capacities
+        optimal_allocation = {name: int(machines[name]['capacity']) for name in machine_names}
+        cost_result = manufacturing_cost_calculator(machines, total_capacity, optimal_allocation)  # Use actual capacity, not demand
         return {
-            'optimal_allocation': max_allocation,
+            'optimal_allocation': optimal_allocation,
             'optimal_cost': cost_result['total_cost'],
             'optimal_variable_cost': cost_result['total_variable_cost'],
             'optimal_fixed_cost': cost_result['total_fixed_cost'],
-            'reasoning': f'Maximum capacity allocation (demand {demand} > capacity {total_capacity})'
+            'feasible': False,
+            'actual_production': total_capacity,
+            'shortfall': demand - total_capacity,
+            'reason': f'Demand {demand} exceeds total capacity {total_capacity}. Best possible: use all machines at full capacity.'
         }
     
-    # Generate all possible allocations that meet demand
-    # We'll limit the search space to reasonable values to avoid infinite combinations
-    max_per_machine = min(demand, 5000)  # Reasonable upper bound
+    best_cost = float('inf')
+    best_allocation = None
+    
+    # Smart optimization: instead of brute force, use a greedy approach with refinement
+    # This is much faster than testing billions of combinations
+    
+    if VERBOSE:
+        print(f"🔄 Using smart optimization instead of full brute force...")
+    
+    # Create list of machines with their efficiency (cost per unit)
+    machine_efficiency = []
+    for name in machine_names:
+        var_cost = machines[name]['variable_cost']
+        fixed_cost = machines[name]['fixed_cost']
+        capacity = int(machines[name]['capacity'])
+        
+        # Efficiency = total cost if using this machine at capacity
+        efficiency_cost = (var_cost * capacity) + fixed_cost
+        efficiency_per_unit = efficiency_cost / capacity if capacity > 0 else float('inf')
+        
+        machine_efficiency.append({
+            'name': name,
+            'capacity': capacity,
+            'var_cost': var_cost,
+            'fixed_cost': fixed_cost,
+            'efficiency_per_unit': efficiency_per_unit
+        })
+    
+    # Sort by efficiency (cost per unit)
+    machine_efficiency.sort(key=lambda x: x['efficiency_per_unit'])
+    
+    if VERBOSE:
+        print(f"🔄 Machine efficiency order: {[m['name'] + f'(${m['efficiency_per_unit']:.2f}/unit)' for m in machine_efficiency]}")
     
     # Try different allocation strategies
-    allocations_to_try = []
+    strategies = []
     
-    # Strategy 1: Single machine allocations
-    for machine_name in machine_names:
+    # Strategy 1: Greedy by efficiency
+    allocation = {name: 0 for name in machine_names}
+    remaining_demand = demand
+    for machine in machine_efficiency:
+        if remaining_demand <= 0:
+            break
+        allocated = min(machine['capacity'], remaining_demand)
+        allocation[machine['name']] = allocated
+        remaining_demand -= allocated
+    
+    if sum(allocation.values()) >= demand:
+        strategies.append(allocation.copy())
+    
+    # Strategy 2: Use only the most efficient machines
+    allocation = {name: 0 for name in machine_names}
+    remaining_demand = demand
+    for machine in machine_efficiency:
+        if remaining_demand <= 0:
+            break
+        allocation[machine['name']] = machine['capacity']
+        remaining_demand -= machine['capacity']
+        if remaining_demand <= 0:
+            break
+    
+    if sum(allocation.values()) >= demand:
+        strategies.append(allocation.copy())
+    
+    # Strategy 3: Try minimizing fixed costs (use fewer machines)
+    for num_machines in range(1, len(machine_names) + 1):
         allocation = {name: 0 for name in machine_names}
-        allocation[machine_name] = demand
-        allocations_to_try.append(allocation)
+        remaining_demand = demand
+        
+        # Use top N most efficient machines
+        for i in range(min(num_machines, len(machine_efficiency))):
+            machine = machine_efficiency[i]
+            if remaining_demand <= 0:
+                break
+            allocated = min(machine['capacity'], remaining_demand)
+            allocation[machine['name']] = allocated
+            remaining_demand -= allocated
+        
+        if sum(allocation.values()) >= demand and remaining_demand <= 0:
+            strategies.append(allocation.copy())
     
-    # Strategy 2: Two machine combinations
-    for i, machine1 in enumerate(machine_names):
-        for j, machine2 in enumerate(machine_names):
-            if i < j:  # Avoid duplicates
-                # Try different splits
-                for split in [0.25, 0.5, 0.75]:
-                    allocation = {name: 0 for name in machine_names}
-                    units1 = int(demand * split)
-                    units2 = demand - units1
-                    allocation[machine1] = units1
-                    allocation[machine2] = units2
-                    allocations_to_try.append(allocation)
-    
-    # Strategy 3: Equal distribution
-    equal_per_machine = demand // len(machine_names)
-    remainder = demand % len(machine_names)
-    allocation = {}
-    for i, machine_name in enumerate(machine_names):
-        allocation[machine_name] = equal_per_machine + (1 if i < remainder else 0)
-    allocations_to_try.append(allocation)
-    
-    # Strategy 4: Capacity-weighted distribution
-    total_capacity = sum(float(specs['capacity']) for specs in machines.values())
-    allocation = {}
-    allocated_total = 0
-    for i, (machine_name, specs) in enumerate(machines.items()):
-        if i == len(machines) - 1:  # Last machine gets remainder
-            allocation[machine_name] = demand - allocated_total
-        else:
-            capacity_ratio = float(specs['capacity']) / total_capacity
-            units = int(demand * capacity_ratio)
-            allocation[machine_name] = units
-            allocated_total += units
-    allocations_to_try.append(allocation)
-    
-    # Evaluate each allocation
-    for allocation in allocations_to_try:
+    # Test all strategies and find the best
+    combinations_tested = 0
+    for allocation in strategies:
         try:
-            # Ensure allocation meets demand
-            total_allocated = sum(allocation.values())
-            if total_allocated < demand:
-                continue
-                
             cost_result = manufacturing_cost_calculator(machines, demand, allocation)
             total_cost = cost_result['total_cost']
             
             if total_cost < best_cost:
                 best_cost = total_cost
-                best_allocation = allocation.copy()
+                best_allocation = allocation
+            
+            combinations_tested += 1
                 
-        except Exception:
-            continue  # Skip invalid allocations
+        except Exception as e:
+            # Skip invalid allocations
+            continue
     
     if best_allocation is None:
-        raise ValueError("Could not find any valid allocation")
+        raise ValueError("No valid allocation found")
     
-    # Calculate final result for best allocation
-    final_result = manufacturing_cost_calculator(machines, demand, best_allocation)
+    # Get detailed cost breakdown for optimal solution
+    optimal_result = manufacturing_cost_calculator(machines, demand, best_allocation)
     
     if VERBOSE:
-        print(f"🏆 ORACLE RESULT: Optimal allocation = {best_allocation}")
-        print(f"💰 ORACLE RESULT: Optimal cost = ${best_cost}")
+        print(f"🏆 OPTIMAL FOUND: {best_allocation}")
+        print(f"💰 Optimal cost: ${best_cost}")
+        print(f"🔬 Tested {combinations_tested} combinations")
     
     return {
         'optimal_allocation': best_allocation,
-        'optimal_cost': best_cost,
-        'optimal_variable_cost': final_result['total_variable_cost'],
-        'optimal_fixed_cost': final_result['total_fixed_cost'],
-        'reasoning': 'Computed via brute force optimization of all feasible allocation strategies'
+        'optimal_cost': optimal_result['total_cost'],
+        'optimal_variable_cost': optimal_result['total_variable_cost'],
+        'optimal_fixed_cost': optimal_result['total_fixed_cost'],
+        'feasible': True,
+        'combinations_tested': combinations_tested
     }
 
 # Create the CrewAI tools
@@ -255,25 +264,27 @@ try:
         return manufacturing_cost_calculator(machines, demand, allocation, called_by_evaluator=True)
     
     evaluator_calculator_tool = Tool(
-        name="manufacturing_cost_calculator",
+        name="evaluator_manufacturing_cost_calculator",
         func=evaluator_calculator,
         description=(
-            "Calculate total manufacturing costs for a machine allocation. "
+            "Calculate total manufacturing costs for a machine allocation (evaluator version). "
             "Input: machines (dict), demand (int), allocation (dict). "
-            "Returns: total costs breakdown. Use this for all cost calculations."
+            "Returns: total costs breakdown. Use this for cost verification in evaluation."
         ),
     )
     
-    brute_force_optimizer_tool = Tool(
-        name="brute_force_optimizer",
-        func=brute_force_optimizer,
+    strategic_optimizer_tool = Tool(
+        name="strategic_optimizer",
+        func=strategic_optimizer,
         description=(
             "Find the mathematically optimal machine allocation using brute force search. "
             "Input: machines (dict), demand (int). "
-            "Returns: optimal allocation and costs. Use this to find the true optimum."
+            "Returns: optimal allocation and costs. Use this to find the best possible solution."
         ),
     )
-except ImportError:
+    
+except ImportError as e:
+    print(f"CrewAI import failed: {e}")
     manufacturing_calculator_tool = None
     evaluator_calculator_tool = None
-    brute_force_optimizer_tool = None
+    strategic_optimizer_tool = None

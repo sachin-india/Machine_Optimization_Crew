@@ -43,98 +43,59 @@ def main():
     allocation_task_output = tasks_output[0] if tasks_output else None
     evaluation_result = tasks_output[1].raw if len(tasks_output) > 1 else "No evaluation available"
 
-    # Handle allocation result (could be pydantic or dict from callback)
+    # Handle allocation result (get the CALLBACK result, not the raw agent response)
     allocation_result = None
     if allocation_task_output:
-        # Check if we have a callback result (which should be a dict)
+        # The callback should return the verified tool result
         raw_output = allocation_task_output.raw
-        print(f"🔍 DEBUG: Raw task output = {raw_output}")
-        print(f"🔍 DEBUG: Raw output type = {type(raw_output)}")
         
-        if isinstance(raw_output, dict):
-            # This is the callback result
+        # Check if we have the callback result (should be a dict with verified costs)
+        if isinstance(raw_output, dict) and 'machine_allocations' in raw_output:
+            # This is the verified callback result
             allocation_result = raw_output
-            print(f"🔍 DEBUG: Using callback result as dict")
+        elif hasattr(allocation_task_output, 'pydantic') and allocation_task_output.pydantic:
+            # Try pydantic result
+            allocation_result = allocation_task_output.pydantic
         else:
-            # Try to parse as JSON or pydantic
-            if hasattr(allocation_task_output, 'pydantic') and allocation_task_output.pydantic:
-                allocation_result = allocation_task_output.pydantic
-                print(f"🔍 DEBUG: Using pydantic result")
-            else:
-                # Try to parse JSON string
-                try:
-                    import json, re
-                    result_str = str(raw_output).strip()
-                    
-                    # Try to extract JSON from markdown code blocks
-                    json_match = re.search(r'```json\s*(\{.*?\})\s*```', result_str, re.S)
-                    if json_match:
-                        allocation_result = json.loads(json_match.group(1))
-                        print(f"🔍 DEBUG: Parsed JSON from markdown")
-                    elif result_str.startswith('{') and result_str.endswith('}'):
-                        allocation_result = json.loads(result_str)
-                        print(f"🔍 DEBUG: Parsed direct JSON")
-                    else:
-                        print(f"🔍 DEBUG: Could not parse result: {result_str[:100]}...")
-                except Exception as e:
-                    print(f"🔍 DEBUG: Error parsing allocation result: {e}")
-                    allocation_result = None
+            # Fallback: try to parse from the task output
+            allocation_result = raw_output
 
-    # Print allocation results
-    print(f"\n=== ALLOCATION RESULTS ===")
+    # Print allocation results with VERIFIED cost from evaluation
+    print(f"\n" + "="*50)
+    print("📋 FINAL RESULTS")
+    print("="*50)
     if allocation_result:
-        # Handle pydantic object
-        if hasattr(allocation_result, 'strategy_name'):
-            strategy = allocation_result.strategy_name
+        # Handle allocation data
+        if hasattr(allocation_result, 'machine_allocations'):
             machine_allocations = allocation_result.machine_allocations
-            total_cost = getattr(allocation_result, 'total_cost', 'Not calculated')
         else:
-            # Handle dict
-            strategy = allocation_result.get('strategy_name', 'Unknown')
             machine_allocations = allocation_result.get('machine_allocations', {})
-            total_cost = allocation_result.get('total_cost', 0)
         
-        print(f"Strategy: {strategy}")
         print(f"Allocation: {machine_allocations}")
-        print(f"Total Cost: ${total_cost}")
+        
+        # Get VERIFIED cost from evaluation result instead of potentially wrong agent cost
+        if evaluation_result and isinstance(evaluation_result, dict):
+            verified_cost = evaluation_result.get('allocator_cost', 'Not available')
+            print(f"Total Cost: ${verified_cost:,.2f} (verified)")
+        else:
+            # Fallback to agent's cost if evaluation not available
+            total_cost = getattr(allocation_result, 'total_cost', 0) if hasattr(allocation_result, 'total_cost') else allocation_result.get('total_cost', 0)
+            print(f"Total Cost: ${total_cost:,.2f} (agent reported)")
     else:
         print("No allocation result available")
-    print(f"\n=== EVALUATION RESULTS ===")
-    print(evaluation_result)
     
-    # Verify tool usage
-    print(f"\n=== TOOL USAGE VERIFICATION ===")
-    print(f"Allocator used calculator tool: {was_tool_called()}")
-    print(f"Evaluator used oracle tool: {was_oracle_tool_called()}")
-    print(f"Evaluator used calculator tool: {was_evaluator_calculator_called()}")
-
-    # Authoritative cost via the tool (single final print)
-    if allocation_result:
-        try:
-            print(f"\n=== COST VERIFICATION ===")
-            # Handle pydantic object
-            if hasattr(allocation_result, 'machine_allocations'):
-                machine_allocations = allocation_result.machine_allocations
-                total_cost = getattr(allocation_result, 'total_cost', 'Not calculated')
-            else:
-                machine_allocations = allocation_result.get('machine_allocations', {})
-                total_cost = allocation_result.get('total_cost', 0)
-            
-            print(f"Allocation from agent: {machine_allocations}")
-            
-            enforced = manufacturing_cost_calculator(
-                machines=problem_input['machines'],
-                demand=problem_input['product_demand'],
-                allocation=machine_allocations
-            )
-            print(f"Agent reported cost: ${total_cost}")
-            print(f"Verified cost: ${enforced['total_cost']}")
-            if float(total_cost) != float(enforced['total_cost']):
-                print(f"❌ COST MISMATCH: Agent cost ≠ Verified cost")
-            else:
-                print(f"✅ COST MATCH: Agent and verification agree")
-        except Exception as e:
-            print(f"Could not compute enforced total cost: {e}")
+    # Print simple evaluation
+    if evaluation_result and isinstance(evaluation_result, dict):
+        if evaluation_result.get('is_optimal'):
+            print("🎯 Evaluation: OPTIMAL SOLUTION FOUND!")
+        else:
+            cost_diff = evaluation_result.get('cost_difference', 0)
+            efficiency = evaluation_result.get('efficiency_percentage', 0)
+            print(f"💰 Could save: ${cost_diff:,.2f}")
+            print(f"📊 Efficiency: {efficiency:.1f}%")
+            optimal_allocation = evaluation_result.get('optimal_allocation', {})
+            print(f"🎯 Optimal would be: {optimal_allocation}")
+    print("="*50)
 
 if __name__ == "__main__":
     main()

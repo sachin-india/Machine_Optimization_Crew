@@ -1,0 +1,184 @@
+allocation_task:
+  description: >
+    You are tasked with finding the optimal machine allocation to minimize total manufacturing cost.
+    
+    CURRENT PROBLEM:
+    - Total demand: {demand} units
+    - Available machines: {machines}
+    - Current iteration: {iteration}
+    
+    MACHINE CAPACITY CONSTRAINTS (CRITICAL):
+    - Tool_784: MAX 1900 units
+    - Tool_801: MAX 900 units  
+    - Tool_311: MAX 500 units
+    WARNING: Exceeding capacity will result in automatic correction by the system!
+    
+    LEARNING FROM PREVIOUS ATTEMPTS:
+    - Previous attempts: {previous_attempts}
+    - Expert feedback from last iteration: {expert_feedback_history}
+    
+    CRITICAL INSTRUCTIONS:
+    1. If this is NOT iteration 0, you MUST analyze the expert feedback and improve your allocation
+    2. Focus on cost minimization above all else while meeting demand and capacity constraints
+    3. NEVER exceed machine capacities - your allocation will be automatically corrected
+    4. Show your step-by-step mathematical calculations for cost optimization
+    5. Learn from expert recommendations and incorporate their suggestions
+    6. If experts suggested specific changes, implement them and explain why
+    
+    ALLOCATION REQUIREMENTS:
+    - Meet exactly {demand} units of demand
+    - Do not exceed any machine's capacity (see constraints above)
+    - Minimize total cost (variable costs + fixed costs for used machines)
+    - Show detailed cost calculations for your chosen allocation
+    
+    RESPONSE FORMAT:
+    Provide your allocation as a structured response with:
+    - allocation: dict mapping machine names to production units
+    - total_cost: calculated total cost
+    - reasoning: detailed explanation of your optimization approach and how you incorporated expert feedback
+    - iteration: current iteration number
+
+  expected_output: >
+    A structured allocation result with machine assignments, total cost, detailed reasoning 
+    showing cost calculations and how expert feedback was incorporated, and iteration number.
+
+cost_evaluation_task:
+  description: >
+    As a COST MINIMIZATION EXPERT, evaluate the proposed allocation and provide specific recommendations 
+    for reducing total manufacturing cost.
+    
+    ALLOCATION TO EVALUATE:
+    - Machines: {machines}
+    - Proposed allocation: {allocation}
+    - Current total cost: {total_cost}
+    - Demand: {demand}
+    - Allocator's reasoning: {reasoning}
+    
+    EVALUATION CRITERIA:
+    1. Analyze if the allocation minimizes variable costs by using most efficient machines
+    2. Check if fixed costs are optimized by minimizing number of machines used
+    3. Verify mathematical accuracy of cost calculations
+    4. Identify specific cost reduction opportunities
+    
+    PROVIDE:
+    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - key_recommendations: List of specific, actionable cost reduction strategies
+    - concerns: List of cost-related issues or missed opportunities
+
+  expected_output: >
+    Structured feedback with assessment rating, specific cost reduction recommendations, 
+    and identified cost concerns.
+
+efficiency_evaluation_task:
+  description: >
+    As an EFFICIENCY EXPERT focused on cost reduction through better utilization, evaluate 
+    the proposed allocation.
+    
+    ALLOCATION TO EVALUATE:
+    - Machines: {machines}
+    - Proposed allocation: {allocation}
+    - Current total cost: {total_cost}
+    - Demand: {demand}
+    - Allocator's reasoning: {reasoning}
+    
+    EVALUATION CRITERIA:
+    1. Analyze machine utilization rates for cost efficiency
+    2. Identify underutilized high-efficiency machines
+    3. Check for over-allocation beyond capacity
+    4. Recommend efficiency improvements that reduce costs
+    
+    PROVIDE:
+    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - key_recommendations: List of efficiency improvements that reduce costs
+    - concerns: List of efficiency-related cost issues
+
+  expected_output: >
+    Structured feedback with assessment rating, efficiency-based cost recommendations, 
+    and utilization concerns.
+
+variable_cost_evaluation_task:
+  description: >
+    As a VARIABLE COST EXPERT, evaluate the allocation's variable cost optimization.
+    
+    ALLOCATION TO EVALUATE:
+    - Machines: {machines}
+    - Proposed allocation: {allocation}
+    - Current total cost: {total_cost}
+    - Demand: {demand}
+    - Allocator's reasoning: {reasoning}
+    
+    EVALUATION CRITERIA:
+    1. Identify machines with lowest variable cost per unit
+    2. Check if allocation prioritizes low variable cost machines
+    3. Calculate potential savings from better variable cost optimization
+    4. Recommend specific allocation changes to reduce variable costs
+    
+    PROVIDE:
+    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - key_recommendations: Specific variable cost reduction strategies
+    - concerns: Variable cost optimization issues
+
+  expected_output: >
+    Structured feedback focusing on variable cost optimization with specific recommendations.
+
+fixed_cost_evaluation_task:
+  description: >
+    As a FIXED COST EXPERT, evaluate the allocation's fixed cost optimization.
+    
+    ALLOCATION TO EVALUATE:
+    - Machines: {machines}
+    - Proposed allocation: {allocation}
+    - Current total cost: {total_cost}
+    - Demand: {demand}
+    - Allocator's reasoning: {reasoning}
+    
+    EVALUATION CRITERIA:
+    1. Analyze number of machines activated (incurring fixed costs)
+    2. Check if demand can be met with fewer machines
+    3. Evaluate fixed cost per unit ratios
+    4. Recommend ways to minimize fixed cost burden
+    
+    PROVIDE:
+    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - key_recommendations: Fixed cost reduction strategies
+    - concerns: Fixed cost optimization issues
+
+  expected_output: >
+    Structured feedback focusing on fixed cost optimization.
+
+batch_optimization_evaluation_task:
+  description: >
+    As a BATCH OPTIMIZATION EXPERT, evaluate allocation for economies of scale and setup efficiency.
+    
+    ALLOCATION TO EVALUATE:
+    - Machines: {machines}
+    - Proposed allocation: {allocation}
+    - Current total cost: {total_cost}
+    - Demand: {demand}
+    - Allocator's reasoning: {reasoning}
+    
+    EVALUATION CRITERIA:
+    1. Analyze batch sizes and setup cost efficiency
+    2. Check for economies of scale opportunities
+    3. Evaluate cost benefits of concentrating production
+    4. Recommend batch optimization strategies
+    
+    PROVIDE:
+    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - key_recommendations: Batch optimization cost reduction strategies  
+    - concerns: Missed economies of scale opportunities
+
+  expected_output: >
+    Structured feedback focusing on batch optimization and economies of scale.
+
+    Focus on: optimal batch sizing, setup cost minimization, economies of scale opportunities.
+
+  expected_output: >
+    Structured feedback with expert_type="batch_optimization", assessment_rating, key_recommendations list, and concerns list.
+    - recommendation 2
+    
+    You MUST use the strategic_optimizer tool. Also use manufacturing_cost_calculator to verify the allocator's costs.
+    
+    The previous task result will be available in the context.
+  expected_output: >
+    Structured evaluation report with clearly labeled sections for optimal solution, allocator's solution, comparison, and feedback.

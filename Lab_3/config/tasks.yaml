@@ -16,21 +16,42 @@ optimize_structured:
 
 evaluate_allocation:
   description: >
-    You MUST use the brute_force_optimizer tool to find the optimal solution. You should also use the manufacturing_cost_calculator to verify costs.
+    You MUST use the strategic_optimizer tool to find the optimal solution. You should also use the manufacturing_cost_calculator to verify costs.
 
     Given the problem with machines {machines} and demand {product_demand}:
     
-    1. First, call the brute_force_optimizer tool with the machines and demand to find the mathematically optimal allocation.
+    1. First, call the strategic_optimizer tool with the machines and demand to find the mathematically optimal allocation.
     2. Use the manufacturing_cost_calculator to verify the costs of the allocator's solution from the previous task.
     3. Compare the allocator's solution (from the previous task) to the optimal solution you found.
-    4. Provide detailed feedback on:
-       - Cost difference between the allocator's solution and optimal solution
-       - Efficiency analysis (percentage difference)
-       - Specific recommendations for improvement
-       - What the allocator did well and what it could do better
     
-    You MUST use the brute_force_optimizer tool. Also use manufacturing_cost_calculator to verify the allocator's costs.
+    IMPORTANT: If demand exceeds total machine capacity, the optimal solution should use maximum capacity of each machine and note that demand cannot be fully met.
+    
+    OUTPUT FORMAT - Provide your evaluation in this exact structure:
+    
+    === OPTIMAL SOLUTION ===
+    Optimal Allocation: [Tool_Name: units, Tool_Name: units, ...]
+    Feasible: Yes/No (if No, explain capacity limitation)
+    Optimal Cost: $amount
+    
+    === ALLOCATOR'S SOLUTION ===
+    Allocator's Allocation: [Tool_Name: units, Tool_Name: units, ...]
+    Allocator's Cost: $amount
+    
+    === COMPARISON ===
+    Cost Difference: $amount (percentage%)
+    Efficiency Rating: percentage%
+    
+    === FEEDBACK ===
+    What the allocator did well:
+    - point 1
+    - point 2
+    
+    Recommendations for improvement:
+    - recommendation 1
+    - recommendation 2
+    
+    You MUST use the strategic_optimizer tool. Also use manufacturing_cost_calculator to verify the allocator's costs.
     
     The previous task result will be available in the context.
   expected_output: >
-    Detailed evaluation report comparing the allocator's solution to the optimal solution, including cost verification and specific recommendations for improvement.
+    Structured evaluation report with clearly labeled sections for optimal solution, allocator's solution, comparison, and feedback.
