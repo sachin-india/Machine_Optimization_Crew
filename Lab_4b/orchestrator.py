@@ -23,6 +23,9 @@ class StrategistFeedback(BaseModel):
     key_recommendations: List[str] = Field(description="List of specific actionable recommendations")
     concerns: List[str] = Field(description="List of identified concerns or issues")
     applied_strategies: List[str] = Field(description="List of optimization strategies used in analysis")
+    mathematically_verified: bool = Field(description="Whether optimality has been mathematically proven")
+    alternatives_tested: bool = Field(description="Whether alternative allocations were tested")
+    verification_details: str = Field(description="Details of mathematical verification performed")
 
 
 class SimpleConvergenceManager:
@@ -33,7 +36,7 @@ class SimpleConvergenceManager:
         self.cost_threshold = 0.02  # 2% improvement threshold
         
     def check_convergence(self, iteration: int, history: List[Dict], strategist_feedback: Dict) -> Dict[str, Any]:
-        """Check if optimization should stop based on simple criteria"""
+        """Check if optimization should stop based on mathematical verification"""
         
         # Always run at least 2 iterations
         if iteration < 2:
@@ -43,15 +46,31 @@ class SimpleConvergenceManager:
         if iteration >= self.max_iterations:
             return {"converged": True, "reason": "max_iterations_reached"}
         
-        # Check cost improvement
+        # Priority 1: Mathematical verification (best case)
+        if self._check_mathematical_verification(strategist_feedback):
+            return {"converged": True, "reason": "mathematical_optimality_proven"}
+        
+        # Priority 2: Check if alternatives need to be tested
+        if not self._check_alternatives_tested(strategist_feedback):
+            return {"converged": False, "reason": "alternatives_need_testing"}
+        
+        # Priority 3: Cost improvement threshold (fallback)
         if self._check_cost_convergence(history):
             return {"converged": True, "reason": "cost_improvement_below_threshold"}
         
-        # Check strategist assessment
+        # Priority 4: Strategist approval (last resort)
         if self._check_strategist_approval(strategist_feedback):
-            return {"converged": True, "reason": "strategist_approval_achieved"}
+            return {"converged": True, "reason": "strategist_approval_with_verification"}
         
         return {"converged": False, "reason": "continue_optimization"}
+    
+    def _check_mathematical_verification(self, strategist_feedback: Dict) -> bool:
+        """Check if strategist has mathematically verified optimality"""
+        return strategist_feedback.get('mathematically_verified', False)
+    
+    def _check_alternatives_tested(self, strategist_feedback: Dict) -> bool:
+        """Check if strategist has tested alternative allocations"""
+        return strategist_feedback.get('alternatives_tested', False)
     
     def _check_cost_convergence(self, history: List[Dict]) -> bool:
         """Simple: Stop when cost improvement drops below 2%"""
@@ -103,7 +122,7 @@ class OptimizationOrchestrator:
     
     @agent 
     def optimization_strategist(self) -> Agent:
-        """Single strategist with access to optimization knowledge base"""
+        """Single strategist with access to optimization knowledge base and verification tools"""
         # Load optimization strategies knowledge base
         strategies_path = os.path.join(os.path.dirname(__file__), 'optimization_strategies.md')
         strategies_content = ""
@@ -111,17 +130,40 @@ class OptimizationOrchestrator:
             with open(strategies_path, 'r', encoding='utf-8') as f:
                 strategies_content = f.read()
         
+        verification_instructions = """
+        
+        CRITICAL: You MUST perform mathematical verification of any allocation you assess as 'optimal'.
+        
+        VERIFICATION REQUIREMENTS:
+        1. Calculate cost per unit for each machine (variable_cost + fixed_cost/capacity)
+        2. Rank machines by efficiency (lowest cost per unit first)
+        3. Generate greedy optimal allocation using efficiency ranking
+        4. Compare current allocation with greedy optimal
+        5. Test at least 2 alternative allocation strategies
+        6. Only mark 'mathematically_verified: true' if current allocation matches proven optimal
+        7. Set 'alternatives_tested: true' only after testing multiple approaches
+        
+        VERIFICATION OUTPUT FORMAT:
+        - mathematically_verified: true/false (true only if proven optimal)
+        - alternatives_tested: true/false (true only if alternatives were actually tested)
+        - verification_details: string explaining your mathematical analysis
+        
+        If allocation is NOT optimal, provide specific recommendations for improvement.
+        """
+        
         return Agent(
             config=self.agents_config['optimization_strategist'],
             llm="openai/gpt-4o",
             verbose=True,
-            tools=[],  # We'll add the knowledge base content directly to the prompt
+            tools=[],
             system_message=f"""You are a Manufacturing Optimization Strategist with access to a comprehensive 
-            knowledge base of optimization strategies. Here is your knowledge base:
+            knowledge base of optimization strategies and mathematical verification capabilities.
 
             {strategies_content}
 
-            Use this knowledge base to analyze allocations and provide expert feedback using proven optimization strategies."""
+            {verification_instructions}
+
+            Use this knowledge base to analyze allocations, perform mathematical verification, and provide expert feedback using proven optimization strategies."""
         )
     
     @task
@@ -154,7 +196,7 @@ class OptimizationOrchestrator:
             var_cost = specs['variable_cost']
             fixed_cost = specs['fixed_cost'] 
             capacity = specs['capacity']
-            cost_per_unit = var_cost + (fixed_cost / capacity)  # Rough cost per unit at full capacity
+            cost_per_unit = var_cost + (fixed_cost / capacity)
             print(f"   {machine}: Capacity={capacity}, VarCost=${var_cost}, FixedCost=${fixed_cost}, $/unit≈${cost_per_unit:.2f}")
         
         print("=" * 80)
@@ -168,19 +210,13 @@ class OptimizationOrchestrator:
             print(f"💡 Allocator Decision: {allocation_result['allocation']}")
             print(f"💰 Calculated Cost: ${allocation_result['total_cost']:,.2f}")
             
-            # Show cost breakdown
-            self._print_cost_breakdown(allocation_result['allocation'])
-            
             # Get strategist feedback
             strategist_feedback = self._get_strategist_feedback(allocation_result)
             print(f"\n🎯 Optimization Strategist Feedback:")
             print(f"   Assessment: {strategist_feedback['assessment']}")
+            print(f"   Mathematical Verification: {'✅ PROVEN' if strategist_feedback.get('mathematically_verified') else '❌ NOT VERIFIED'}")
             if strategist_feedback.get('recommendations'):
-                print(f"   Recommendations: {'; '.join(strategist_feedback['recommendations'][:3])}")
-            if strategist_feedback.get('concerns'):
-                print(f"   Concerns: {'; '.join(strategist_feedback['concerns'][:2])}")
-            if strategist_feedback.get('applied_strategies'):
-                print(f"   Applied Strategies: {', '.join(strategist_feedback['applied_strategies'][:3])}")
+                print(f"   Key Recommendations: {strategist_feedback['recommendations'][0]}")
             
             # Store iteration result
             self.history.append({
@@ -218,30 +254,19 @@ class OptimizationOrchestrator:
             'strategist_feedback_history': self._format_strategist_feedback()
         }
         
-        # Debug: Print context being passed
-        print(f"🔧 DEBUG - Context for iteration {iteration}:")
-        print(f"   Previous attempts: {context['previous_attempts']}")
-        print(f"   Strategist feedback: {context['strategist_feedback_history'][:300]}...")  # First 300 chars
-        
         # Create and run allocation task
         crew = Crew(
             agents=[self.allocator_agent()],
             tasks=[self.allocation_task()],
             process=Process.sequential,
-            verbose=True  # Enable verbose to see agent reasoning
+            verbose=False  # Reduced verbosity
         )
         
         result = crew.kickoff(inputs=context)
         
-        # Debug: Print raw result
-        print(f"🔧 DEBUG - Raw allocation result type: {type(result)}")
-        
         # Extract structured result
         if result.tasks_output and hasattr(result.tasks_output[0], 'pydantic'):
             allocation_result = result.tasks_output[0].pydantic
-            
-            print(f"🔧 DEBUG - Structured allocation: {allocation_result.allocation}")
-            print(f"🔧 DEBUG - Agent reasoning: {allocation_result.reasoning[:300]}...")
             
             # Validate and fix allocation
             fixed_allocation = self._validate_and_fix_allocation(allocation_result.allocation)
@@ -249,8 +274,7 @@ class OptimizationOrchestrator:
             return {
                 'allocation': fixed_allocation,
                 'total_cost': self._calculate_cost(fixed_allocation),
-                'reasoning': allocation_result.reasoning,
-                'raw_allocation': allocation_result.allocation  # Keep original for debugging
+                'reasoning': allocation_result.reasoning
             }
         else:
             # Fallback: create a reasonable allocation
@@ -289,7 +313,10 @@ class OptimizationOrchestrator:
                     'assessment': feedback.assessment_rating,
                     'recommendations': feedback.key_recommendations,
                     'concerns': feedback.concerns,
-                    'applied_strategies': feedback.applied_strategies
+                    'applied_strategies': feedback.applied_strategies,
+                    'mathematically_verified': feedback.mathematically_verified,
+                    'alternatives_tested': feedback.alternatives_tested,
+                    'verification_details': feedback.verification_details
                 }
             else:
                 # Fallback for unstructured output
@@ -298,7 +325,10 @@ class OptimizationOrchestrator:
                     'assessment': 'acceptable',  # Default rating
                     'recommendations': ['Review allocation for improvements'],
                     'concerns': ['Unable to provide structured feedback'],
-                    'applied_strategies': ['Fallback analysis']
+                    'applied_strategies': ['Fallback analysis'],
+                    'mathematically_verified': False,
+                    'alternatives_tested': False,
+                    'verification_details': 'Fallback: No verification performed due to parsing error'
                 }
         except Exception as e:
             print(f"Error getting feedback from Optimization Strategist: {e}")
@@ -306,50 +336,48 @@ class OptimizationOrchestrator:
                 'assessment': 'acceptable',
                 'recommendations': ['Review allocation'],
                 'concerns': ['Strategist evaluation failed'],
-                'applied_strategies': ['Error handling']
+                'applied_strategies': ['Error handling'],
+                'mathematically_verified': False,
+                'alternatives_tested': False,
+                'verification_details': f'Error occurred during evaluation: {str(e)}'
             }
     
     def _validate_and_fix_allocation(self, allocation: Dict[str, int]) -> Dict[str, int]:
-        """Validate allocation against capacity constraints and fix if needed with clear feedback"""
+        """Validate allocation against capacity constraints and fix if needed"""
         fixed_allocation = {}
         total_demand = self.demand
         allocated_so_far = 0
         violations_found = []
-        
-        print(f"🔧 VALIDATION - Original allocation: {allocation}")
         
         # First pass: fix capacity violations
         for machine, units in allocation.items():
             if machine in self.machines:
                 capacity = int(self.machines[machine]['capacity'])
                 if units > capacity:
-                    violations_found.append(f"{machine}: {units} > {capacity} (capacity)")
+                    violations_found.append(f"{machine}: {units} > {capacity}")
                     units = capacity
-                fixed_units = min(units, capacity)  # Don't exceed capacity
+                fixed_units = min(units, capacity)
                 fixed_allocation[machine] = fixed_units
                 allocated_so_far += fixed_units
         
         if violations_found:
-            print(f"⚠️  CAPACITY VIOLATIONS DETECTED:")
-            for violation in violations_found:
-                print(f"   - {violation}")
+            print(f"⚠️  Fixed capacity violations: {', '.join(violations_found)}")
         
         # Second pass: if we haven't met demand, try to allocate more
         if allocated_so_far < total_demand:
             remaining_demand = total_demand - allocated_so_far
-            print(f"⚠️  DEMAND SHORTFALL: {remaining_demand} units not allocated")
+            print(f"⚠️  Allocating remaining {remaining_demand} units to efficient machines")
             
-            # Sort machines by efficiency (cost per unit)
+            # Sort machines by efficiency
             machine_efficiency = []
             for machine, specs in self.machines.items():
                 var_cost = specs['variable_cost']
                 fixed_cost = specs['fixed_cost']
                 capacity = specs['capacity']
-                # Calculate cost per unit if using at 50% capacity (rough efficiency measure)
                 cost_per_unit = var_cost + (fixed_cost / (capacity * 0.5))
                 machine_efficiency.append((machine, cost_per_unit, capacity))
             
-            machine_efficiency.sort(key=lambda x: x[1])  # Sort by cost per unit
+            machine_efficiency.sort(key=lambda x: x[1])
             
             # Allocate remaining demand to most efficient machines
             for machine, _, capacity in machine_efficiency:
@@ -360,7 +388,6 @@ class OptimizationOrchestrator:
                 additional_allocation = min(remaining_demand, available_capacity)
                 
                 if additional_allocation > 0:
-                    print(f"   → Adding {additional_allocation} units to {machine}")
                     fixed_allocation[machine] = current_allocation + additional_allocation
                     remaining_demand -= additional_allocation
         
@@ -368,15 +395,6 @@ class OptimizationOrchestrator:
         for machine in self.machines:
             if machine not in fixed_allocation:
                 fixed_allocation[machine] = 0
-        
-        print(f"🔧 VALIDATION - Final allocation: {fixed_allocation}")
-        
-        # Verify total demand is met
-        total_allocated = sum(fixed_allocation.values())
-        if total_allocated != total_demand:
-            print(f"⚠️  WARNING: Total allocated ({total_allocated}) != Demand ({total_demand})")
-        
-        return fixed_allocation
         
         return fixed_allocation
     

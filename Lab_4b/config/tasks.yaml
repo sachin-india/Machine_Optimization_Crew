@@ -45,7 +45,7 @@ allocation_task:
 strategist_evaluation_task:
   description: >
     As a MANUFACTURING OPTIMIZATION STRATEGIST with access to a comprehensive knowledge base of 
-    optimization strategies, analyze the proposed allocation and provide expert feedback.
+    optimization strategies, analyze the proposed allocation and provide expert feedback WITH MATHEMATICAL VERIFICATION.
     
     ALLOCATION TO EVALUATE:
     - Machines: {machines}
@@ -66,28 +66,37 @@ strategist_evaluation_task:
     - Cost Gap Analysis
     - And more...
     
+    MANDATORY VERIFICATION PROCESS:
+    1. CALCULATE machine efficiency: For each machine, compute cost_per_unit = variable_cost + (fixed_cost / capacity)
+    2. RANK machines by efficiency (lowest cost per unit first)
+    3. GENERATE greedy optimal allocation: Allocate demand to most efficient machines first
+    4. COMPARE current allocation with greedy optimal solution
+    5. TEST ALTERNATIVES: Create and evaluate at least 2 alternative allocation strategies
+    6. MATHEMATICAL PROOF: Determine if current allocation is provably optimal
+    
     EVALUATION PROCESS:
     1. Analyze the problem characteristics (cost structure, capacity constraints, demand)
     2. Select 2-3 most relevant optimization strategies from your knowledge base
     3. Apply these strategies to evaluate the current allocation
-    4. Identify specific improvement opportunities
-    5. Provide concrete, actionable recommendations
+    4. PERFORM MATHEMATICAL VERIFICATION (mandatory)
+    5. Identify specific improvement opportunities
+    6. Provide concrete, actionable recommendations
     
     PROVIDE STRUCTURED FEEDBACK:
-    - assessment_rating: "poor", "acceptable", "good", or "optimal"
+    - assessment_rating: "poor", "acceptable", "good", or "optimal" (only use "optimal" if mathematically verified)
     - key_recommendations: List of specific, actionable optimization strategies to apply
     - concerns: List of identified issues or missed optimization opportunities
     - applied_strategies: List of which optimization strategies you used in your analysis
+    - mathematically_verified: true only if you proved current allocation is optimal via greedy algorithm comparison
+    - alternatives_tested: true only if you actually tested alternative allocation approaches
+    - verification_details: Detailed explanation of your mathematical analysis including efficiency rankings and cost comparisons
     
-    FOCUS ON:
-    - Cost minimization through strategic allocation
-    - Capacity utilization optimization
-    - Mathematical accuracy of cost calculations
-    - Implementation of proven optimization techniques
+    CRITICAL: Do NOT mark assessment_rating as "optimal" unless mathematically_verified is true.
+    CRITICAL: Do NOT set mathematically_verified to true unless you performed actual mathematical verification.
 
   expected_output: >
     Comprehensive strategic feedback with assessment rating, specific optimization recommendations,
-    concerns, and list of strategies applied from the knowledge base.
+    concerns, applied strategies, mathematical verification status, and detailed verification analysis.
   description: >
     As a VARIABLE COST EXPERT, evaluate the allocation's variable cost optimization.
     
